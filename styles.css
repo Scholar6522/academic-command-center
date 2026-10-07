@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Academic and machine-learning command center for the 2026–2027 no-retake roadmap.">
+  <title>Academic & ML Command Center</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">2026–2027 EXECUTION SYSTEM</p>
+      <h1>Academic & ML Command Center</h1>
+      <p class="subhead">October 2026 — August 2027</p>
+    </div>
+    <div class="top-actions">
+      <button id="resetPrefs" class="ghost-btn" type="button">Reset filters</button>
+      <button id="exportProgress" class="primary-btn" type="button">Export progress</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero-grid">
+      <div class="hero-card">
+        <div class="hero-kicker">MASTER roadmap</div>
+        <h2>Build a high-readiness academic + ML profile without wasting the year.</h2>
+        <p>Every task is linked to a deadline, readiness criterion, dependency, or portfolio outcome.</p>
+        <div class="hero-pills">
+          <span>GED 175–200</span>
+          <span>ACT 34–36</span>
+          <span>SAT 1550–1600</span>
+          <span>AP 5s</span>
+          <span>Cambridge A*/A</span>
+        </div>
+
+        <div class="roadmap-image-wrap">
+          <img src="assets/academic-ml-roadmap.png" alt="Academic ML roadmap from October 2026 to August 2027" loading="lazy" />
+          <div class="image-caption">October 2026–August 2027 master roadmap</div>
+        </div>
+        <p class="muted note">If the image is not uploaded yet, add it to <code>assets/academic-ml-roadmap.png</code>.</p>
+      </div>
+
+      <div class="metric-card">
+        <span>Total completion</span>
+        <strong id="overallProgress">0%</strong>
+        <div class="progress-track"><div id="overallBar" class="progress-fill"></div></div>
+        <small id="completedCount">0 / 0 tasks complete</small>
+      </div>
+
+      <div class="metric-card risk-card">
+        <span>Critical tasks remaining</span>
+        <strong id="criticalRemaining">0</strong>
+        <small id="criticalLabel">critical tasks left</small>
+      </div>
+
+      <div class="metric-card">
+        <span>Upcoming deadline</span>
+        <strong id="upcomingDeadline">—</strong>
+        <small>Next significant due date</small>
+      </div>
+
+      <div class="metric-card">
+        <span>Exam readiness</span>
+        <strong id="examReadinessMetric">0 exam(s) ready</strong>
+        <small>Readiness only when evidence supports it.</small>
+      </div>
+
+      <div class="metric-card">
+        <span>CS / ML momentum</span>
+        <strong id="portfolioProgressMetric">0 tracked items active</strong>
+        <small>Portfolio evidence and course progression</small>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">ROADMAP</p>
+          <h2>October 2026 → August 2027</h2>
+        </div>
+      </div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+
+    <section class="two-col">
+      <div class="panel">
+        <div class="section-heading compact">
+          <div><p class="eyebrow">TRACKS</p><h2>Progress by track</h2></div>
+        </div>
+        <div id="trackProgress"></div>
+      </div>
+
+      <div class="panel">
+        <div class="section-heading compact">
+          <div><p class="eyebrow">THIS WEEK</p><h2>Due soon / late</h2></div>
+        </div>
+        <div id="weekOverview"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading compact">
+        <div><p class="eyebrow">COMMAND CENTER</p><h2>Tasks</h2></div>
+        <span id="taskCount" class="muted"></span>
+      </div>
+      <div class="filters">
+        <label>Search<input id="search" type="search" placeholder="e.g. calculus, SAT, 6.006"></label>
+        <label>Track<select id="trackFilter"><option value="">All tracks</option></select></label>
+        <label>Month<select id="monthFilter"><option value="">All months</option></select></label>
+        <label>Status<select id="statusFilter"><option value="">All statuses</option><option>Not Started</option><option>In Progress</option><option>Blocked</option><option>Complete</option></select></label>
+        <label>Readiness<select id="readinessFilter"><option value="">All readiness</option><option>Not Assessed</option><option>Learning</option><option>Practicing</option><option>Exam Ready</option><option>Needs Remediation</option></select></label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Track</th>
+              <th>Deadline</th>
+              <th>Priority</th>
+              <th>Progress</th>
+              <th>Readiness</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="taskTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="two-col">
+      <div class="panel">
+        <div class="section-heading compact">
+          <div><p class="eyebrow">EXAMS</p><h2>Readiness gates</h2></div>
+        </div>
+        <div id="examReadiness"></div>
+      </div>
+
+      <div class="panel">
+        <div class="section-heading compact">
+          <div><p class="eyebrow">PORTFOLIO</p><h2>CS / ML evidence</h2></div>
+        </div>
+        <div id="portfolio"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading compact">
+        <div><p class="eyebrow">DEPENDENCY MAP</p><h2>Major academic sequence</h2></div>
+      </div>
+      <div id="dependencyMap" class="dependency-map"></div>
+    </section>
+
+    <section class="callout">
+      <div>
+        <p class="eyebrow">WEEKLY REVIEW</p>
+        <h2>Don't just ask “Did I study?”</h2>
+        <p>Ask: What improved? What remains weak? What is due next? Am I exam-ready? What should be removed from the schedule?</p>
+      </div>
+      <a href="docs/WEEKLY_REVIEW.md">Open weekly review template →</a>
+    </section>
+  </main>
+
+  <footer>
+    <p>Source of truth: <code>data/tasks.csv</code> · Browser-only preferences are stored locally.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

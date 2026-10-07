@@ -1,0 +1,309 @@
+const state = { tasks: [], filtered: [], selectedMonth: '' };
+const prefsKey = 'academicTrackerPrefs';
+
+const $ = (id) => document.getElementById(id);
+const fmtDate = (s) => {
+  if (!s || s === 'TBD') return 'TBD';
+  const d = new Date(`${s}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? s : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
+};
+const monthKey = (s) => s ? s.slice(0, 7) : '';
+const monthLabel = (key) => key ? new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(new Date(`${key}-01T00:00:00`)) : '';
+const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clamp = (v, min = 0, max = 100) => Math.min(max, Math.max(min, v));
+
+function getTaskById(id) {
+  return state.tasks.find(t => t.ID === id) || null;
+}
+
+async function init() {
+  try {
+    state.tasks = await fetch('data/tasks.json').then(r => r.json());
+    restorePrefs();
+    populateFilters();
+    renderAll();
+  } catch (err) {
+    document.body.innerHTML = `<main style="padding:3rem;font-family:system-ui"><h1>Tracker failed to load</h1><p>Run the repo from a local server rather than opening index.html directly.</p><pre>${esc(err.message)}</pre></main>`;
+  }
+}
+
+function restorePrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(prefsKey) || '{}');
+    for (const [id, val] of Object.entries(p)) {
+      const el = $(id);
+      if (el) el.value = val;
+    }
+  } catch {}
+}
+
+function savePrefs() {
+  const ids = ['search', 'trackFilter', 'monthFilter', 'statusFilter', 'readinessFilter'];
+  const p = {};
+  ids.forEach(id => {
+    const el = $(id);
+    if (el) p[id] = el.value;
+  });
+  localStorage.setItem(prefsKey, JSON.stringify(p));
+}
+
+function populateFilters() {
+  const tracks = [...new Set(state.tasks.map(t => t.Track))].sort();
+  const monthSet = [...new Set(state.tasks.map(t => monthKey(t.Deadline)).filter(Boolean))].sort();
+
+  tracks.forEach(track => {
+    $('trackFilter').insertAdjacentHTML('beforeend', `<option value="${esc(track)}">${esc(track)}</option>`);
+  });
+
+  monthSet.forEach(month => {
+    $('monthFilter').insertAdjacentHTML('beforeend', `<option value="${month}">${esc(monthLabel(month))}</option>`);
+  });
+
+  ['search', 'trackFilter', 'monthFilter', 'statusFilter', 'readinessFilter'].forEach(id => {
+    $(id).addEventListener('input', () => {
+      savePrefs();
+      renderAll();
+    });
+  });
+
+  $('resetPrefs').addEventListener('click', () => {
+    localStorage.removeItem(prefsKey);
+    location.reload();
+  });
+
+  $('exportProgress').addEventListener('click', exportProgress);
+}
+
+function filteredTasks() {
+  const q = $('search').value.trim().toLowerCase();
+  const tr = $('trackFilter').value;
+  const m = $('monthFilter').value;
+  const st = $('statusFilter').value;
+  const r = $('readinessFilter').value;
+
+  return state.tasks.filter(t => {
+    const haystack = `${t.Task} ${t.Track} ${t.Type} ${t.Notes || ''} ${t.Dependencies || ''}`.toLowerCase();
+    return (
+      (!q || haystack.includes(q)) &&
+      (!tr || t.Track === tr) &&
+      (!m || monthKey(t.Deadline) === m) &&
+      (!st || t.Status === st) &&
+      (!r || t.Readiness === r)
+    );
+  }).sort((a, b) => {
+    if (a.Deadline === b.Deadline) return a.Task.localeCompare(b.Task);
+    return (a.Deadline || '').localeCompare(b.Deadline || '');
+  });
+}
+
+function renderAll() {
+  state.filtered = filteredTasks();
+  renderSummary();
+  renderTimeline();
+  renderTrackProgress();
+  renderWeekOverview();
+  renderTasks();
+  renderExams();
+  renderPortfolio();
+  renderDependencyMap();
+}
+
+function renderSummary() {
+  const tasks = state.tasks;
+  const total = tasks.length || 0;
+  const avg = total ? Math.round(tasks.reduce((sum, t) => sum + Number(t.Progress || 0), 0) / total) : 0;
+  const completed = tasks.filter(t => t.Status === 'Complete').length;
+  const criticalRemaining = tasks.filter(t => t.Priority === 'Critical' && t.Status !== 'Complete').length;
+  const dueSoon = tasks.filter(t => {
+    const deadline = t.Deadline && t.Deadline !== 'TBD' ? new Date(`${t.Deadline}T00:00:00`) : null;
+    if (!deadline) return false;
+    const diff = (deadline - new Date()) / (1000 * 60 * 60 * 24);
+    return diff >= 0 && diff <= 30;
+  });
+  const examReady = tasks.filter(t => /Exam|Test/i.test(t.Type) && t.Readiness === 'Exam Ready').length;
+  const portfolio = tasks.filter(t => /CS|ML|Project|Course/i.test(t.Track) && Number(t.Progress || 0) >= 50).length;
+
+  $('overallProgress').textContent = `${avg}%`;
+  $('overallBar').style.width = `${avg}%`;
+  $('completedCount').textContent = `${completed} / ${total} tasks complete`;
+  $('criticalRemaining').textContent = String(criticalRemaining);
+  $('criticalLabel').textContent = criticalRemaining === 1 ? 'critical task left' : 'critical tasks left';
+  $('upcomingDeadline').textContent = dueSoon.length ? dueSoon.sort((a, b) => (a.Deadline || '').localeCompare(b.Deadline || ''))[0].Task : 'No imminent deadlines';
+  $('examReadinessMetric').textContent = `${examReady} exam(s) ready`;
+  $('portfolioProgressMetric').textContent = `${portfolio} tracked items active`;
+}
+
+function renderTimeline() {
+  const groups = {};
+  state.tasks.forEach(t => {
+    const month = monthKey(t.Deadline);
+    if (!month) return;
+    (groups[month] ??= []).push(t);
+  });
+
+  const months = Object.keys(groups).sort();
+  $('timeline').innerHTML = months.map(month => {
+    const arr = groups[month];
+    const avg = arr.length ? Math.round(arr.reduce((sum, t) => sum + Number(t.Progress || 0), 0) / arr.length) : 0;
+    const done = arr.filter(t => t.Status === 'Complete').length;
+    const isCurrent = month === monthKey(new Date().toISOString().slice(0, 10));
+    const tasksHtml = arr.slice(0, 8).map(t => `<div class="month-task"><strong>${esc(t.Task)}</strong><div class="mini">${esc(t.Track)} · ${fmtDate(t.Deadline)}</div></div>`).join('');
+    const extra = arr.length > 8 ? `<div class="mini">+ ${arr.length - 8} more</div>` : '';
+    return `
+      <article class="month-card ${isCurrent ? 'current' : ''}">
+        <div class="month-title">${esc(monthLabel(month))}</div>
+        <div class="month-progress">${done}/${arr.length} complete · ${avg}% avg</div>
+        <div class="progress-track"><div class="progress-fill" style="width:${avg}%"></div></div>
+        ${tasksHtml}${extra}
+      </article>
+    `;
+  }).join('');
+}
+
+function renderTrackProgress() {
+  const tracks = [...new Set(state.tasks.map(t => t.Track))].sort();
+  $('trackProgress').innerHTML = tracks.map(track => {
+    const arr = state.tasks.filter(t => t.Track === track);
+    const avg = arr.length ? Math.round(arr.reduce((sum, t) => sum + Number(t.Progress || 0), 0) / arr.length) : 0;
+    return `
+      <div class="track-row">
+        <span>${esc(track)}</span>
+        <div class="progress-track"><div class="progress-fill" style="width:${avg}%"></div></div>
+        <strong>${avg}%</strong>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderWeekOverview() {
+  const now = new Date();
+  const soon = state.tasks.filter(t => {
+    const d = t.Deadline && t.Deadline !== 'TBD' ? new Date(`${t.Deadline}T00:00:00`) : null;
+    if (!d) return false;
+    const diff = Math.ceil((d - now) / (1000 * 60 * 60 * 24));
+    return diff >= 0 && diff <= 7 && t.Status !== 'Complete';
+  }).sort((a, b) => (a.Deadline || '').localeCompare(b.Deadline || ''));
+
+  const overdue = state.tasks.filter(t => {
+    if (!t.Deadline || t.Deadline === 'TBD' || t.Status === 'Complete') return false;
+    return new Date(`${t.Deadline}T00:00:00`) < now;
+  }).sort((a, b) => (a.Deadline || '').localeCompare(b.Deadline || ''));
+
+  $('weekOverview').innerHTML = `
+    <div class="mini-card">
+      <div class="mini-label">Due this week</div>
+      <ul>${soon.length ? soon.slice(0, 6).map(t => `<li>${esc(t.Task)} <span class="muted">${fmtDate(t.Deadline)}</span></li>`).join('') : '<li>No tasks due in the next 7 days.</li>'}</ul>
+    </div>
+    <div class="mini-card danger">
+      <div class="mini-label">Overdue / late</div>
+      <ul>${overdue.length ? overdue.slice(0, 6).map(t => `<li>${esc(t.Task)} <span class="muted">${fmtDate(t.Deadline)}</span></li>`).join('') : '<li>No overdue critical tasks.</li>'}</ul>
+    </div>
+  `;
+}
+
+function prBadge(priority) {
+  const classes = {
+    Critical: 'critical',
+    High: 'high',
+    Medium: 'medium',
+    Low: 'low'
+  };
+  const cls = classes[priority] || 'medium';
+  return `<span class="badge badge-${cls}">${esc(priority)}</span>`;
+}
+
+function readinessBadge(readiness) {
+  const map = {
+    'Exam Ready': 'ready',
+    'Not Assessed': 'learning',
+    'Learning': 'learning',
+    'Practicing': 'learning',
+    'Needs Remediation': 'risk',
+    Ready: 'ready',
+    At Risk: 'risk',
+    Complete: 'ready',
+    'In Progress': 'learning'
+  };
+  const cls = map[readiness] || 'learning';
+  return `<span class="badge badge-${cls}">${esc(readiness || 'Not Assessed')}</span>`;
+}
+
+function renderTasks() {
+  $('taskCount').textContent = `${state.filtered.length} shown`;
+  $('taskTable').innerHTML = state.filtered.map(t => `
+    <tr>
+      <td>
+        <strong>${esc(t.Task)}</strong>
+        <div class="muted">${esc(t.ID)}</div>
+      </td>
+      <td>${esc(t.Track)}</td>
+      <td>${fmtDate(t.Deadline)}</td>
+      <td>${prBadge(t.Priority)}</td>
+      <td>
+        <div class="progress-track"><div class="progress-fill" style="width:${clamp(Number(t.Progress || 0))}%"></div></div>
+        <div class="muted">${clamp(Number(t.Progress || 0))}%</div>
+      </td>
+      <td>${readinessBadge(t.Readiness)}</td>
+      <td>${esc(t.Status)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="7" class="muted">No matching tasks.</td></tr>';
+}
+
+function renderExams() {
+  const exams = state.tasks.filter(t => /Exam|Test/i.test(t.Type) || /ACT|SAT|GED|AP|Cambridge/i.test(t.Track));
+  $('examReadiness').innerHTML = exams.map(t => {
+    const dateLabel = t.Deadline && t.Deadline !== 'TBD' ? fmtDate(t.Deadline) : 'TBD';
+    const target = t.Target || 'Target TBD';
+    return `
+      <div class="exam-card">
+        <div class="exam-top">
+          <span class="exam-name">${esc(t.Task)}</span>
+          ${readinessBadge(t.Readiness)}
+        </div>
+        <div class="exam-meta">Target: ${esc(target)} · Date: ${esc(dateLabel)}</div>
+        <div class="exam-meta">Status: ${esc(t.Status)} · ${esc(t.Track)}</div>
+      </div>
+    `;
+  }).join('') || '<p class="muted">No exam-track tasks found.</p>';
+}
+
+function renderPortfolio() {
+  const arr = state.tasks.filter(t => /CS|ML|Project|Course/i.test(t.Track) || /MIT|Jovian|Kaggle|Microsoft|Google/i.test(t.Task));
+  $('portfolio').innerHTML = arr.slice(0, 10).map(t => `
+    <div class="portfolio-item">
+      <strong>${esc(t.Task)}</strong>
+      <div class="muted">${esc(t.Track)} · ${clamp(Number(t.Progress || 0))}% complete · ${esc(t.Evidence || 'Add GitHub evidence when complete.')}</div>
+    </div>
+  `).join('') || '<p class="muted">No portfolio items yet.</p>';
+}
+
+function renderDependencyMap() {
+  const edges = [
+    ['Algebra 2', 'College Algebra', 'Calculus'],
+    ['College Algebra', 'Calculus / college calculus', 'Linear algebra'],
+    ['High School Physics', 'College Physics 1', 'AP Physics C / Cambridge Physics'],
+    ['MIT 6.0001', 'MIT 6.0002', 'Discrete math / algorithms'],
+    ['Probability / Statistics', 'ML foundations', 'Portfolio capstone']
+  ];
+
+  $('dependencyMap').innerHTML = edges.map(([a, b, c]) => `
+    <div class="dependency-box">
+      <span>${esc(a)}</span>
+      <span class="dep-arrow">→</span>
+      <span>${esc(b)}</span>
+      <span class="dep-arrow">→</span>
+      <span>${esc(c)}</span>
+    </div>
+  `).join('');
+}
+
+function exportProgress() {
+  const blob = new Blob([JSON.stringify(state.tasks, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'academic-tracker-progress.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+init();
